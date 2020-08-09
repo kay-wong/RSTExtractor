@@ -29,14 +29,9 @@ NUM_SYMBOLIC_TAGS = 3
 
 # Regular expressions used to normalize digits.
 DIGIT_RE = re.compile(br"\d")
-BIAFFINE_PATH = "/home/ffajri/Workspace/RSTExtractor/models/biaffine"
+BIAFFINE_PATH = "models/biaffine"
 BIAFFINE_MODEL = "network.pt"
-RST_CONFIG_PATH = "/home/ffajri/Workspace/RSTExtractor/models/rst/config.cfg"
-DATA_PATH = '/home/ffajri/Data/Petition/US/processed/merge/*'
-THREADS = 10
-
-if not os.path.exists('output_tree'):
-    os.makedirs('output_tree')
+RST_CONFIG_PATH = "models/rst/config.cfg"
 
 def form_sentence(lines, word_alpha, char_alpha, tag_alpha, symbolic_root=False, symbolic_end=False):
     words = []
@@ -103,32 +98,53 @@ def data_reader(file_path, biaffine):
     instance = Instance(sentences, syntax_features)
     return instance
 
-files=glob.glob(DATA_PATH)
 
 def run_thread(files):
     rst = RSTModel(RST_CONFIG_PATH)
     biaffine = BiaffineModel(BIAFFINE_PATH, BIAFFINE_MODEL)
     for filepath in files:
         filename = filepath.split('/')[-1].replace('.merge', '')
-        instance = data_reader(filepath, biaffine)
-        rst_data = rst.prepare_data([instance], 1)
-        tree = rst.get_subtree(rst_data)[0]
-        tree.save('output_tree/' + filename)
+        if os.path.isfile(OUTPUT_PATH+'/'+filename+'.npy'):
+            print("{} exists".format(OUTPUT_PATH+'/'+filename+'.npy'))
+            pass
+        else:
+            try:
+                print("Processing filename: {}".format(filename))
+                instance = data_reader(filepath, biaffine)
+                rst_data = rst.prepare_data([instance], 1)
+                tree = rst.get_subtree(rst_data)[0]
+                tree.save(OUTPUT_PATH+'/' + filename)
+            except Exception as e:
+                print("{} failed to process".format(filename))
+                print(e)
+                with open(ERROR_F, 'a') as f:
+                    f.write(filename)
+                    f.write('\n')
 
-partitions  = []
-size = int(math.ceil(1.0*len(files)/THREADS))
-processes = list()
-for i in range(THREADS):
-    start = i * size
-    end = start + size
-    if end > len(files):
-        end = len(files)
-    p = files[start:end]
+if __name__ == '__main__':
+    DATA_PATH=sys.argv[1]
+    OUTPUT_PATH=sys.argv[2]
+    THREADS=int(sys.argv[3])
+    ERROR_F= OUTPUT_PATH+'/errorf.txt'
     
-    process = Process(target=run_thread, args=(p,))
-    process.start()
-    processes.append(process)
-    if end == len(files):
-        break
-for process in processes:
-    process.join()
+    if not os.path.exists(OUTPUT_PATH):
+        os.makedirs(OUTPUT_PATH)
+    
+    files=glob.glob(DATA_PATH)
+    partitions  = []
+    size = int(math.ceil(1.0*len(files)/THREADS))
+    processes = list()
+    for i in range(THREADS):
+        start = i * size
+        end = start + size
+        if end > len(files):
+            end = len(files)
+        p = files[start:end]
+        
+        process = Process(target=run_thread, args=(p,))
+        process.start()
+        processes.append(process)
+        if end == len(files):
+            break
+    for process in processes:
+        process.join()
